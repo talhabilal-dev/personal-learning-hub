@@ -29,7 +29,7 @@ export function ImportModal({
   const [newPlaylistColor, setNewPlaylistColor] = useState("#3b82f6");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
-  const handleFiles = (files: FileList | null) => {
+  const handleFiles = async (files: FileList | null) => {
     if (files) {
       const videoFiles = Array.from(files).filter((file) =>
         file.type.startsWith("video/")
@@ -39,21 +39,21 @@ export function ImportModal({
           setPendingFiles(videoFiles);
           setShowCreatePlaylist(true);
         } else {
-          addVideos(videoFiles, targetPlaylistId);
+          await addVideos(videoFiles, targetPlaylistId);
           onClose();
         }
       }
     }
   };
 
-  const handleCreatePlaylistAndImport = () => {
+  const handleCreatePlaylistAndImport = async () => {
     if (newPlaylistName.trim()) {
-      const newPlaylist = createNewPlaylist(
+      const newPlaylist = await createNewPlaylist(
         newPlaylistName.trim(),
         newPlaylistDescription.trim() || undefined,
         newPlaylistColor
       );
-      addVideos(pendingFiles, newPlaylist.id);
+      await addVideos(pendingFiles, newPlaylist.id);
       resetForm();
       onClose();
     }

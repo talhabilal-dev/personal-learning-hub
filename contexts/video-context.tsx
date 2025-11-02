@@ -11,14 +11,12 @@ import {
   addVideoToDB,
   updateProgressInDB,
   removeVideoFromDB,
-  getVideosFromDB,
   loadDB,
   saveDB,
   createPlaylist,
   updatePlaylist,
   deletePlaylist,
   getAllPlaylists,
-  getPlaylistById,
   moveVideoToPlaylist,
   type VideoData,
   type PlaylistData,
@@ -28,15 +26,19 @@ export interface Video extends VideoData {
   file: File;
 }
 
-export interface Playlist extends PlaylistData {}
+export type Playlist = PlaylistData;
 
 interface VideoContextType {
   videos: Video[];
   playlists: Playlist[];
   currentPlaylist: Playlist | null;
-  addVideos: (files: File[], playlistId?: string) => void;
-  removeVideo: (id: string) => void;
-  updateProgress: (id: string, progress: number, currentTime?: number) => void;
+  addVideos: (files: File[], playlistId?: string) => Promise<void>;
+  removeVideo: (id: string) => Promise<void>;
+  updateProgress: (
+    id: string,
+    progress: number,
+    currentTime?: number
+  ) => Promise<void>;
   currentVideo: Video | null;
   setCurrentVideo: (video: Video | null) => void;
   setCurrentPlaylist: (playlist: Playlist | null) => void;
@@ -44,16 +46,16 @@ interface VideoContextType {
     name: string,
     description?: string,
     color?: string
-  ) => Playlist;
+  ) => Promise<Playlist>;
   updatePlaylistInfo: (
     id: string,
     updates: Partial<Omit<PlaylistData, "id" | "createdAt">>
-  ) => boolean;
-  deletePlaylistById: (id: string) => boolean;
+  ) => Promise<boolean>;
+  deletePlaylistById: (id: string) => Promise<boolean>;
   moveVideoToNewPlaylist: (
     videoId: string,
     targetPlaylistId: string
-  ) => boolean;
+  ) => Promise<boolean>;
   isLoading: boolean;
 }
 
@@ -69,42 +71,60 @@ export function VideoProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const loadData = async () => {
-      // Load playlists
-      const allPlaylists = getAllPlaylists();
-      setPlaylists(allPlaylists);
+      try {
+        // Load playlists
+        const allPlaylists = await getAllPlaylists();
+        setPlaylists(allPlaylists);
 
-      // Set default playlist as current
-      const defaultPlaylist =
-        allPlaylists.find((p) => p.id === "default") || allPlaylists[0];
-      setCurrentPlaylist(defaultPlaylist);
+        // Set default playlist as current
+        const defaultPlaylist =
+          allPlaylists.find((p) => p.id === "default") || allPlaylists[0];
+        setCurrentPlaylist(defaultPlaylist);
 
-      // Note: Files are not persisted across sessions since they're stored in memory
-      // On app reload, only metadata is loaded from localStorage
-      // This is intentional for this local-file-based app design
-      setVideos([]); // Start with empty array since files aren't persisted
-      setIsLoading(false);
+        // Note: Files are not persisted across sessions since they're stored in memory
+        // On app reload, only metadata is loaded from database
+        // This is intentional for this local-file-based app design
+        setVideos([]); // Start with empty array since files aren't persisted
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Failed to load data:", error);
+        setIsLoading(false);
+      }
     };
     loadData();
   }, []);
 
-  const addVideos = (files: File[], playlistId?: string) => {
+  const addVideos = async (files: File[], playlistId?: string) => {
     const targetPlaylistId = playlistId || currentPlaylist?.id || "default";
     const newVideos: Video[] = [];
     const newFileMap = new Map(fileMap);
 
-    files.forEach((file) => {
+    for (const file of files) {
       // Create a temporary video element to get duration
       const video = document.createElement("video");
       video.preload = "metadata";
 
-      video.onloadedmetadata = () => {
+      const videoData = await addVideoToDB(
+        {
+          name: file.name.replace(/\.[^/.]+$/, ""),
+          duration: 0, // Will be updated once metadata loads
+          progress: 0,
+          currentTime: 0,
+          watched: false,
+          addedAt: new Date().toISOString(),
+          playlistId: targetPlaylistId,
+        },
+        targetPlaylistId
+      );
+
+      video.onloadedmetadata = async () => {
         // Update the duration in the database once metadata is loaded
-        updateProgressInDB(videoData.id, videoData.progress);
-        const db = loadDB();
-        const dbVideo = db.videos.find((v) => v.id === videoData.id);
+        await updateProgressInDB(videoData.id, videoData.progress);
+        const db = await loadDB();
+        const dbVideo = db.videos.find((v: VideoData) => v.id === videoData.id);
         if (dbVideo) {
           dbVideo.duration = video.duration;
-          saveDB(db);
+          await saveDB(db);
 
           // Update local state as well
           setVideos((prev) =>
@@ -118,32 +138,19 @@ export function VideoProvider({ children }: { children: ReactNode }) {
 
       video.src = URL.createObjectURL(file);
 
-      const videoData = addVideoToDB(
-        {
-          name: file.name.replace(/\.[^/.]+$/, ""),
-          duration: 0, // Will be updated once metadata loads
-          progress: 0,
-          currentTime: 0,
-          watched: false,
-          addedAt: new Date().toISOString(),
-          playlistId: targetPlaylistId,
-        },
-        targetPlaylistId
-      );
-
       newFileMap.set(videoData.id, file);
       newVideos.push({
         ...videoData,
         file,
       });
-    });
+    }
 
     setFileMap(newFileMap);
     setVideos((prev) => [...prev, ...newVideos]);
   };
 
-  const removeVideo = (id: string) => {
-    removeVideoFromDB(id);
+  const removeVideo = async (id: string) => {
+    await removeVideoFromDB(id);
     setVideos((prev) => prev.filter((v) => v.id !== id));
     if (currentVideo?.id === id) {
       setCurrentVideo(null);
@@ -154,12 +161,12 @@ export function VideoProvider({ children }: { children: ReactNode }) {
     setFileMap(newFileMap);
   };
 
-  const updateProgress = (
+  const updateProgress = async (
     id: string,
     progress: number,
     currentTime?: number
   ) => {
-    updateProgressInDB(id, progress, currentTime);
+    await updateProgressInDB(id, progress, currentTime);
     setVideos((prev) =>
       prev.map((v) =>
         v.id === id
@@ -175,21 +182,21 @@ export function VideoProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const createNewPlaylist = (
+  const createNewPlaylist = async (
     name: string,
     description?: string,
     color?: string
-  ): Playlist => {
-    const newPlaylist = createPlaylist({ name, description, color });
+  ): Promise<Playlist> => {
+    const newPlaylist = await createPlaylist({ name, description, color });
     setPlaylists((prev) => [...prev, newPlaylist]);
     return newPlaylist;
   };
 
-  const updatePlaylistInfo = (
+  const updatePlaylistInfo = async (
     id: string,
     updates: Partial<Omit<PlaylistData, "id" | "createdAt">>
-  ): boolean => {
-    const updatedPlaylist = updatePlaylist(id, updates);
+  ): Promise<boolean> => {
+    const updatedPlaylist = await updatePlaylist(id, updates);
     if (updatedPlaylist) {
       setPlaylists((prev) =>
         prev.map((p) => (p.id === id ? updatedPlaylist : p))
@@ -202,8 +209,8 @@ export function VideoProvider({ children }: { children: ReactNode }) {
     return false;
   };
 
-  const deletePlaylistById = (id: string): boolean => {
-    const success = deletePlaylist(id);
+  const deletePlaylistById = async (id: string): Promise<boolean> => {
+    const success = await deletePlaylist(id);
     if (success) {
       setPlaylists((prev) => prev.filter((p) => p.id !== id));
       if (currentPlaylist?.id === id) {
@@ -216,11 +223,11 @@ export function VideoProvider({ children }: { children: ReactNode }) {
     return success;
   };
 
-  const moveVideoToNewPlaylist = (
+  const moveVideoToNewPlaylist = async (
     videoId: string,
     targetPlaylistId: string
-  ): boolean => {
-    const success = moveVideoToPlaylist(videoId, targetPlaylistId);
+  ): Promise<boolean> => {
+    const success = await moveVideoToPlaylist(videoId, targetPlaylistId);
     if (success) {
       setVideos((prev) =>
         prev.map((v) =>

@@ -61,9 +61,9 @@ export function PlaylistManager({
     return `${minutes}m`;
   };
 
-  const handleCreatePlaylist = () => {
+  const handleCreatePlaylist = async () => {
     if (newPlaylistName.trim()) {
-      createNewPlaylist(
+      await createNewPlaylist(
         newPlaylistName.trim(),
         newPlaylistDescription.trim() || undefined,
         newPlaylistColor
@@ -75,9 +75,9 @@ export function PlaylistManager({
     }
   };
 
-  const handleUpdatePlaylist = (playlistId: string) => {
+  const handleUpdatePlaylist = async (playlistId: string) => {
     if (newPlaylistName.trim()) {
-      updatePlaylistInfo(playlistId, {
+      await updatePlaylistInfo(playlistId, {
         name: newPlaylistName.trim(),
         description: newPlaylistDescription.trim() || undefined,
         color: newPlaylistColor,
@@ -282,14 +282,14 @@ export function PlaylistManager({
                       <Edit3 className="w-3 h-3" />
                     </button>
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
                         if (
                           confirm(
                             `Delete playlist "${playlist.name}"? Videos will be moved to the default playlist.`
                           )
                         ) {
-                          deletePlaylistById(playlist.id);
+                          await deletePlaylistById(playlist.id);
                         }
                       }}
                       className="p-1 hover:bg-red-500/20 rounded text-foreground/60 hover:text-red-500"

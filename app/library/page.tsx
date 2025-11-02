@@ -354,7 +354,7 @@ export default function LibraryPage() {
                           )}
 
                           <button
-                            onClick={() => removeVideo(video.id)}
+                            onClick={async () => await removeVideo(video.id)}
                             className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-500 rounded transition-colors"
                           >
                             <Trash2 className="w-4 h-4" />

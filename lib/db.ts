@@ -46,73 +46,37 @@ const INITIAL_DB: DatabaseSchema = {
     },
 }
 
-// File-based storage functions
-async function saveToFile(data: DatabaseSchema): Promise<void> {
-    if (typeof window === "undefined") return;
+// Global cache for the database
+let dbCache: DatabaseSchema | null = null;
+let dbLoaded = false;
 
-    try {
-        // In a real app, you'd save to actual files via an API
-        // For now, we'll use localStorage as fallback but structure it for easy migration
-        localStorage.setItem('learning_hub_db', JSON.stringify(data));
-    } catch (error) {
-        console.error('Failed to save database:', error);
-    }
-}
+// Initialize database
+async function initDB(): Promise<DatabaseSchema> {
+    if (dbCache && dbLoaded) return dbCache;
 
-async function loadFromFile(): Promise<DatabaseSchema> {
     if (typeof window === "undefined") return INITIAL_DB;
 
     try {
-        // In a real app, you'd load from actual files via an API
-        // For now, we'll use localStorage but migrate old format
-        const stored = localStorage.getItem('learning_hub_db');
-        if (stored) {
-            const data = JSON.parse(stored);
+        const response = await fetch('/api/db', {
+            method: 'GET',
+        });
+
+        if (response.ok) {
+            const data = await response.json();
             // Migrate old format if needed
             if (!data.playlists) {
                 data.playlists = INITIAL_DB.playlists;
-                // Assign existing videos to default playlist
-                data.videos = data.videos?.map((v: any) => ({
+                data.videos = data.videos?.map((v: VideoData & { playlistId?: string }) => ({
                     ...v,
                     playlistId: v.playlistId || 'default'
                 })) || [];
             }
+            dbCache = data;
+            dbLoaded = true;
             return data;
         }
 
-        // Try to migrate from old localStorage format
-        const oldStored = localStorage.getItem('vidlib_db');
-        if (oldStored) {
-            const oldData = JSON.parse(oldStored);
-            const migratedData: DatabaseSchema = {
-                videos: oldData.videos?.map((v: any) => ({
-                    ...v,
-                    playlistId: 'default'
-                })) || [],
-                playlists: INITIAL_DB.playlists,
-                metadata: {
-                    version: "2.0",
-                    lastUpdated: new Date().toISOString()
-                }
-            };
-            // Save migrated data and remove old
-            await saveToFile(migratedData);
-            localStorage.removeItem('vidlib_db');
-            return migratedData;
-        }
-
-        return INITIAL_DB;
-    } catch (error) {
-        console.error('Failed to load database:', error);
-        return INITIAL_DB;
-    }
-}
-
-export function loadDB(): DatabaseSchema {
-    // This is synchronous for compatibility, but loads from the new format
-    if (typeof window === "undefined") return INITIAL_DB;
-
-    try {
+        // Fallback to localStorage and try to migrate
         const stored = localStorage.getItem('learning_hub_db');
         if (stored) {
             const data = JSON.parse(stored);
@@ -124,15 +88,19 @@ export function loadDB(): DatabaseSchema {
                     playlistId: v.playlistId || 'default'
                 })) || [];
             }
+            dbCache = data;
+            dbLoaded = true;
+            // Try to save to file
+            await saveToFile(data);
             return data;
         }
 
-        // Try to migrate from old format
+        // Try to migrate from old localStorage format
         const oldStored = localStorage.getItem('vidlib_db');
         if (oldStored) {
             const oldData = JSON.parse(oldStored);
             const migratedData: DatabaseSchema = {
-                videos: oldData.videos?.map((v: any) => ({
+                videos: oldData.videos?.map((v: VideoData & { playlistId?: string }) => ({
                     ...v,
                     playlistId: 'default'
                 })) || [],
@@ -142,29 +110,85 @@ export function loadDB(): DatabaseSchema {
                     lastUpdated: new Date().toISOString()
                 }
             };
-            saveDB(migratedData);
+            // Save migrated data and remove old
+            dbCache = migratedData;
+            dbLoaded = true;
+            await saveToFile(migratedData);
             localStorage.removeItem('vidlib_db');
             return migratedData;
         }
 
+        dbCache = INITIAL_DB;
+        dbLoaded = true;
         return INITIAL_DB;
     } catch (error) {
-        console.error('Failed to load database:', error);
+        console.error('Failed to initialize database:', error);
+        // Fallback to localStorage
+        try {
+            const stored = localStorage.getItem('learning_hub_db');
+            if (stored) {
+                const data = JSON.parse(stored);
+                dbCache = data;
+                dbLoaded = true;
+                return data;
+            }
+        } catch (localError) {
+            console.error('Failed to load from localStorage:', localError);
+        }
+        dbCache = INITIAL_DB;
+        dbLoaded = true;
         return INITIAL_DB;
     }
 }
 
-export function saveDB(db: DatabaseSchema): void {
+// File-based storage functions
+async function saveToFile(data: DatabaseSchema): Promise<void> {
+    if (typeof window === "undefined") return;
+
+    try {
+        const response = await fetch('/api/db', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data),
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to save to file');
+        }
+    } catch (error) {
+        console.error('Failed to save database to file:', error);
+        // Fallback to localStorage
+        localStorage.setItem('learning_hub_db', JSON.stringify(data));
+    }
+}
+
+export async function loadDB(): Promise<DatabaseSchema> {
+    return await initDB();
+}
+
+export async function saveDB(db: DatabaseSchema): Promise<void> {
     if (typeof window === "undefined") return
 
     db.metadata.lastUpdated = new Date().toISOString()
-    localStorage.setItem('learning_hub_db', JSON.stringify(db))
+    dbCache = db;
+
+    // Save to file via API
+    await saveToFile(db);
+
+    // Also save to localStorage as fallback
+    try {
+        localStorage.setItem('learning_hub_db', JSON.stringify(db))
+    } catch (error) {
+        console.error('Failed to save to localStorage:', error);
+    }
 }
 
-export function addVideoToDB(videoData: Omit<VideoData, "id" | "sequence">, playlistId: string = 'default'): VideoData {
-    const db = loadDB()
-    const playlist = db.playlists.find(p => p.id === playlistId) || db.playlists[0]
-    const playlistVideos = db.videos.filter(v => v.playlistId === playlist.id)
+export async function addVideoToDB(videoData: Omit<VideoData, "id" | "sequence">, playlistId: string = 'default'): Promise<VideoData> {
+    const db = await loadDB()
+    const playlist = db.playlists.find((p: PlaylistData) => p.id === playlistId) || db.playlists[0]
+    const playlistVideos = db.videos.filter((v: VideoData) => v.playlistId === playlist.id)
 
     const newVideo: VideoData = {
         id: Date.now().toString() + Math.random().toString(36).slice(2),
@@ -173,54 +197,54 @@ export function addVideoToDB(videoData: Omit<VideoData, "id" | "sequence">, play
         playlistId: playlist.id,
     }
     db.videos.push(newVideo)
-    saveDB(db)
+    await saveDB(db)
     return newVideo
 }
 
-export function updateProgressInDB(id: string, progress: number, currentTime?: number): void {
-    const db = loadDB()
-    const video = db.videos.find((v) => v.id === id)
+export async function updateProgressInDB(id: string, progress: number, currentTime?: number): Promise<void> {
+    const db = await loadDB()
+    const video = db.videos.find((v: VideoData) => v.id === id)
     if (video) {
         video.progress = progress
         if (currentTime !== undefined) {
             video.currentTime = currentTime
         }
         video.watched = progress >= 95
-        saveDB(db)
+        await saveDB(db)
     }
 }
 
-export function removeVideoFromDB(id: string): void {
-    const db = loadDB()
-    const video = db.videos.find(v => v.id === id)
+export async function removeVideoFromDB(id: string): Promise<void> {
+    const db = await loadDB()
+    const video = db.videos.find((v: VideoData) => v.id === id)
     if (!video) return
 
-    db.videos = db.videos.filter((v) => v.id !== id)
+    db.videos = db.videos.filter((v: VideoData) => v.id !== id)
     // Resequence remaining videos in the same playlist
-    const playlistVideos = db.videos.filter(v => v.playlistId === video.playlistId)
-    playlistVideos.forEach((v, idx) => {
+    const playlistVideos = db.videos.filter((v: VideoData) => v.playlistId === video.playlistId)
+    playlistVideos.forEach((v: VideoData, idx: number) => {
         v.sequence = idx
     })
-    saveDB(db)
+    await saveDB(db)
 }
 
-export function getVideosFromDB(playlistId?: string): VideoData[] {
-    const db = loadDB()
+export async function getVideosFromDB(playlistId?: string): Promise<VideoData[]> {
+    const db = await loadDB()
     let videos = db.videos
     if (playlistId) {
-        videos = videos.filter(v => v.playlistId === playlistId)
+        videos = videos.filter((v: VideoData) => v.playlistId === playlistId)
     }
     return videos.sort((a, b) => a.sequence - b.sequence)
 }
 
-export function getVideoByIdFromDB(id: string): VideoData | undefined {
-    const db = loadDB()
-    return db.videos.find((v) => v.id === id)
+export async function getVideoByIdFromDB(id: string): Promise<VideoData | undefined> {
+    const db = await loadDB()
+    return db.videos.find((v: VideoData) => v.id === id)
 }
 
 // Playlist management functions
-export function createPlaylist(playlistData: Omit<PlaylistData, "id" | "createdAt" | "updatedAt">): PlaylistData {
-    const db = loadDB()
+export async function createPlaylist(playlistData: Omit<PlaylistData, "id" | "createdAt" | "updatedAt">): Promise<PlaylistData> {
+    const db = await loadDB()
     const newPlaylist: PlaylistData = {
         id: Date.now().toString() + Math.random().toString(36).slice(2),
         createdAt: new Date().toISOString(),
@@ -228,61 +252,61 @@ export function createPlaylist(playlistData: Omit<PlaylistData, "id" | "createdA
         ...playlistData,
     }
     db.playlists.push(newPlaylist)
-    saveDB(db)
+    await saveDB(db)
     return newPlaylist
 }
 
-export function updatePlaylist(id: string, updates: Partial<Omit<PlaylistData, "id" | "createdAt">>): PlaylistData | null {
-    const db = loadDB()
-    const playlist = db.playlists.find(p => p.id === id)
+export async function updatePlaylist(id: string, updates: Partial<Omit<PlaylistData, "id" | "createdAt">>): Promise<PlaylistData | null> {
+    const db = await loadDB()
+    const playlist = db.playlists.find((p: PlaylistData) => p.id === id)
     if (!playlist) return null
 
     Object.assign(playlist, updates, { updatedAt: new Date().toISOString() })
-    saveDB(db)
+    await saveDB(db)
     return playlist
 }
 
-export function deletePlaylist(id: string): boolean {
+export async function deletePlaylist(id: string): Promise<boolean> {
     if (id === 'default') return false // Can't delete default playlist
 
-    const db = loadDB()
-    const playlistExists = db.playlists.some(p => p.id === id)
+    const db = await loadDB()
+    const playlistExists = db.playlists.some((p: PlaylistData) => p.id === id)
     if (!playlistExists) return false
 
     // Move all videos from this playlist to default
-    db.videos.forEach(v => {
+    db.videos.forEach((v: VideoData) => {
         if (v.playlistId === id) {
             v.playlistId = 'default'
         }
     })
 
     // Remove the playlist
-    db.playlists = db.playlists.filter(p => p.id !== id)
+    db.playlists = db.playlists.filter((p: PlaylistData) => p.id !== id)
 
     // Resequence videos in default playlist
-    const defaultVideos = db.videos.filter(v => v.playlistId === 'default')
-    defaultVideos.forEach((v, idx) => {
+    const defaultVideos = db.videos.filter((v: VideoData) => v.playlistId === 'default')
+    defaultVideos.forEach((v: VideoData, idx: number) => {
         v.sequence = idx
     })
 
-    saveDB(db)
+    await saveDB(db)
     return true
 }
 
-export function getAllPlaylists(): PlaylistData[] {
-    const db = loadDB()
+export async function getAllPlaylists(): Promise<PlaylistData[]> {
+    const db = await loadDB()
     return db.playlists.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-export function getPlaylistById(id: string): PlaylistData | undefined {
-    const db = loadDB()
-    return db.playlists.find(p => p.id === id)
+export async function getPlaylistById(id: string): Promise<PlaylistData | undefined> {
+    const db = await loadDB()
+    return db.playlists.find((p: PlaylistData) => p.id === id)
 }
 
-export function moveVideoToPlaylist(videoId: string, targetPlaylistId: string): boolean {
-    const db = loadDB()
-    const video = db.videos.find(v => v.id === videoId)
-    const targetPlaylist = db.playlists.find(p => p.id === targetPlaylistId)
+export async function moveVideoToPlaylist(videoId: string, targetPlaylistId: string): Promise<boolean> {
+    const db = await loadDB()
+    const video = db.videos.find((v: VideoData) => v.id === videoId)
+    const targetPlaylist = db.playlists.find((p: PlaylistData) => p.id === targetPlaylistId)
 
     if (!video || !targetPlaylist) return false
 
@@ -290,16 +314,16 @@ export function moveVideoToPlaylist(videoId: string, targetPlaylistId: string): 
     video.playlistId = targetPlaylistId
 
     // Resequence videos in both playlists
-    const oldPlaylistVideos = db.videos.filter(v => v.playlistId === oldPlaylistId)
-    oldPlaylistVideos.forEach((v, idx) => {
+    const oldPlaylistVideos = db.videos.filter((v: VideoData) => v.playlistId === oldPlaylistId)
+    oldPlaylistVideos.forEach((v: VideoData, idx: number) => {
         v.sequence = idx
     })
 
-    const newPlaylistVideos = db.videos.filter(v => v.playlistId === targetPlaylistId)
-    newPlaylistVideos.forEach((v, idx) => {
+    const newPlaylistVideos = db.videos.filter((v: VideoData) => v.playlistId === targetPlaylistId)
+    newPlaylistVideos.forEach((v: VideoData, idx: number) => {
         v.sequence = idx
     })
 
-    saveDB(db)
+    await saveDB(db)
     return true
 }

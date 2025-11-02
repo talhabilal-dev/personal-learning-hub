@@ -114,9 +114,12 @@ export default function PlayerPage() {
     );
   }
 
-  const handleProgressChange = (newProgress: number, currentTime: number) => {
+  const handleProgressChange = async (
+    newProgress: number,
+    currentTime: number
+  ) => {
     setProgress(newProgress);
-    updateProgress(videoId, newProgress, currentTime);
+    await updateProgress(videoId, newProgress, currentTime);
   };
 
   return (
