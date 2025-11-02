@@ -12,7 +12,10 @@ import {
   Clock,
   CheckCircle,
   FolderOpen,
+  Quote as QuoteIcon,
 } from "lucide-react";
+import { VideoThumbnail } from "@/components/video-thumbnail";
+import { getDailyQuote, type Quote } from "@/lib/quotes";
 
 export default function LibraryPage() {
   const router = useRouter();
@@ -24,6 +27,7 @@ export default function LibraryPage() {
     removeVideo,
     setCurrentVideo,
     moveVideoToNewPlaylist,
+    associateFileWithVideo,
     isLoading,
   } = useVideoLibrary();
 
@@ -31,6 +35,7 @@ export default function LibraryPage() {
     currentPlaylist?.id || "default"
   );
   const [showPlaylistManager, setShowPlaylistManager] = useState(false);
+  const [dailyQuote] = useState<Quote>(() => getDailyQuote()); // Initialize with daily quote
 
   const handlePlayVideo = (videoId: string) => {
     const video = videos.find((v) => v.id === videoId);
@@ -205,6 +210,25 @@ export default function LibraryPage() {
               </p>
             )}
 
+            {/* Daily Quote */}
+            {dailyQuote && (
+              <div className="bg-muted rounded-lg p-4 mb-6 border border-border">
+                <div className="flex items-start gap-3">
+                  <QuoteIcon className="w-5 h-5 text-primary mt-1 shrink-0" />
+                  <div>
+                    <p className="text-foreground font-medium italic mb-2">
+                      &ldquo;{dailyQuote.quote}&rdquo;
+                    </p>
+                    {dailyQuote.author && (
+                      <p className="text-foreground/60 text-sm">
+                        — {dailyQuote.author}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {currentPlaylistVideos.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <div className="bg-card border border-border rounded-lg p-6">
@@ -289,17 +313,14 @@ export default function LibraryPage() {
                     className="group bg-card border border-border rounded-lg overflow-hidden hover:border-accent/50 transition-all"
                   >
                     {/* Thumbnail */}
-                    <div className="relative w-full aspect-video bg-secondary flex items-center justify-center overflow-hidden">
-                      <Play className="w-12 h-12 text-foreground/20 group-hover:text-accent transition-colors" />
-                      {video.progress > 0 && (
-                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-secondary">
-                          <div
-                            className="h-full bg-gradient-to-r from-accent to-primary transition-all"
-                            style={{ width: `${video.progress}%` }}
-                          ></div>
-                        </div>
-                      )}
-                    </div>
+                    <VideoThumbnail
+                      video={video}
+                      onFileAssociated={(file) =>
+                        associateFileWithVideo(video.id, file)
+                      }
+                      showPlayButton={true}
+                      onClick={() => handlePlayVideo(video.id)}
+                    />
 
                     {/* Info */}
                     <div className="p-4">

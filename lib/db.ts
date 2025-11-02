@@ -8,6 +8,7 @@ export interface VideoData {
     watched: boolean
     addedAt: string
     playlistId: string
+    filePath?: string // Store the file path for persistence across sessions
 }
 
 export interface PlaylistData {
