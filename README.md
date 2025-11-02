@@ -1,36 +1,102 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Absolutely — let’s wrap up what you’re building into a nice, clean summary 👇
 
-## Getting Started
+---
 
-First, run the development server:
+🎓 Project Summary: Personal Learning Hub
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+You’re building a personal web app (React-only) that helps you learn from your own video library — totally offline, distraction-free, and progress-aware.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+🧠 Core Concept
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+It’s like your own private “learning platform” (think Netflix + Focus Mode), where you upload your study videos into folders (React, Node, etc.), and the app:
 
-## Learn More
+Shows total number of videos and total learning time per course.
 
-To learn more about Next.js, take a look at the following resources:
+Lets you watch videos inside the app.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Tracks your watch progress and remembers where you left off.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Displays your overall progress and streaks, so you can stay motivated.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+🗂️ Project Structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+public/
+ └── videos/
+     ├── react/
+     │    ├── 01-intro.mp4
+     │    ├── 02-components.mp4
+     ├── node/
+          ├── 01-intro.mp4
+          ├── 02-apis.mp4
+
+src/
+ ├── db/
+ │    ├── react.json
+ │    ├── node.json
+ ├── components/
+ └── App.jsx
+
+Each JSON file describes one course and defines:
+
+{
+  "courseName": "React Fundamentals",
+  "folder": "/videos/react/",
+  "videos": [
+    { "title": "Intro to React", "file": "01-intro.mp4", "order": 1 },
+    { "title": "Components", "file": "02-components.mp4", "order": 2 }
+  ]
+}
+
+---
+
+⚙️ Main Features
+
+📂 Multi-course support: Each folder (React, Node, etc.) is a separate course.
+
+🧮 Total duration calculation: Reads each video’s metadata to show total hours/minutes.
+
+▶️ In-app video player: Plays videos with resume-from-last-time feature.
+
+⏱️ Progress tracking: Stores your watch progress (per video + per course) in localStorage.
+
+🧘 Focus Mode: Distraction-free viewing mode for learning sessions.
+
+📊 Dashboard: Displays total learning time, completion rate, and per-course stats.
+
+🧭 Sequential playback: Videos follow the defined order (or numeric filenames).
+
+🔁 Next Lesson button: Continue automatically to the next video when one ends.
+
+---
+
+💡 Nice-to-have Extras (for fun & motivation)
+
+🎯 Daily learning goal (e.g., “Watch 30 minutes/day”)
+
+🌈 Theming (dark mode, focus theme)
+
+🕹️ XP / Level-up system for gamified motivation
+
+🧘 Break reminders (“Take a 5-min stretch!” after an hour)
+
+☁️ (Later) Optional cloud sync using Firebase or Supabase
+
+---
+
+🧩 Tech Stack
+
+Frontend: React (no backend needed)
+
+Storage: JSON files (for video metadata) + localStorage (for user progress)
+
+Video Player: HTML5 <video> element or react-player
+
+---
+
+In short:
+
+> You’re building a personalized video learning dashboard that organizes your local course videos, tracks progress, and helps you stay focused while learning — all powered by plain React and JSON data.
