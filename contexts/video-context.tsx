@@ -23,7 +23,7 @@ import {
 } from "@/lib/db";
 
 export interface Video extends VideoData {
-  file: File;
+  file?: File; // Make file optional since we might only have metadata
 }
 
 export type Playlist = PlaylistData;
@@ -56,6 +56,7 @@ interface VideoContextType {
     videoId: string,
     targetPlaylistId: string
   ) => Promise<boolean>;
+  associateFileWithVideo: (videoId: string, file: File) => void;
   isLoading: boolean;
 }
 
@@ -81,10 +82,27 @@ export function VideoProvider({ children }: { children: ReactNode }) {
           allPlaylists.find((p) => p.id === "default") || allPlaylists[0];
         setCurrentPlaylist(defaultPlaylist);
 
-        // Note: Files are not persisted across sessions since they're stored in memory
-        // On app reload, only metadata is loaded from database
-        // This is intentional for this local-file-based app design
-        setVideos([]); // Start with empty array since files aren't persisted
+        // Load video metadata from database
+        // Note: Files are not persisted across sessions, but we can still load
+        // video metadata for duration calculations and progress tracking
+        const db = await loadDB();
+        const videoMetadata = db.videos.map((videoData: VideoData) => ({
+          ...videoData,
+          // No file object needed for metadata-only videos
+        }));
+
+        console.log(
+          "Loaded videos from database:",
+          videoMetadata.length,
+          "videos"
+        );
+        console.log(
+          "Total duration:",
+          videoMetadata.reduce((acc, v) => acc + v.duration, 0),
+          "seconds"
+        );
+
+        setVideos(videoMetadata);
         setIsLoading(false);
       } catch (error) {
         console.error("Failed to load data:", error);
@@ -113,13 +131,13 @@ export function VideoProvider({ children }: { children: ReactNode }) {
           watched: false,
           addedAt: new Date().toISOString(),
           playlistId: targetPlaylistId,
+          filePath: file.name, // Store the original file name for reference
         },
         targetPlaylistId
       );
 
       video.onloadedmetadata = async () => {
         // Update the duration in the database once metadata is loaded
-        await updateProgressInDB(videoData.id, videoData.progress);
         const db = await loadDB();
         const dbVideo = db.videos.find((v: VideoData) => v.id === videoData.id);
         if (dbVideo) {
@@ -146,7 +164,13 @@ export function VideoProvider({ children }: { children: ReactNode }) {
     }
 
     setFileMap(newFileMap);
-    setVideos((prev) => [...prev, ...newVideos]);
+
+    // Merge new videos with existing ones, avoiding duplicates
+    setVideos((prev) => {
+      const existingIds = new Set(prev.map((v) => v.id));
+      const uniqueNewVideos = newVideos.filter((v) => !existingIds.has(v.id));
+      return [...prev, ...uniqueNewVideos];
+    });
   };
 
   const removeVideo = async (id: string) => {
@@ -238,6 +262,17 @@ export function VideoProvider({ children }: { children: ReactNode }) {
     return success;
   };
 
+  const associateFileWithVideo = (videoId: string, file: File) => {
+    const newFileMap = new Map(fileMap);
+    newFileMap.set(videoId, file);
+    setFileMap(newFileMap);
+
+    // Update the video object with the file
+    setVideos((prev) =>
+      prev.map((v) => (v.id === videoId ? { ...v, file } : v))
+    );
+  };
+
   return (
     <VideoContext.Provider
       value={{
@@ -254,6 +289,7 @@ export function VideoProvider({ children }: { children: ReactNode }) {
         updatePlaylistInfo,
         deletePlaylistById,
         moveVideoToNewPlaylist,
+        associateFileWithVideo,
         isLoading,
       }}
     >
