@@ -14,20 +14,46 @@ import {
   getVideosFromDB,
   loadDB,
   saveDB,
+  createPlaylist,
+  updatePlaylist,
+  deletePlaylist,
+  getAllPlaylists,
+  getPlaylistById,
+  moveVideoToPlaylist,
   type VideoData,
+  type PlaylistData,
 } from "@/lib/db";
 
 export interface Video extends VideoData {
   file: File;
 }
 
+export interface Playlist extends PlaylistData {}
+
 interface VideoContextType {
   videos: Video[];
-  addVideos: (files: File[]) => void;
+  playlists: Playlist[];
+  currentPlaylist: Playlist | null;
+  addVideos: (files: File[], playlistId?: string) => void;
   removeVideo: (id: string) => void;
   updateProgress: (id: string, progress: number, currentTime?: number) => void;
   currentVideo: Video | null;
   setCurrentVideo: (video: Video | null) => void;
+  setCurrentPlaylist: (playlist: Playlist | null) => void;
+  createNewPlaylist: (
+    name: string,
+    description?: string,
+    color?: string
+  ) => Playlist;
+  updatePlaylistInfo: (
+    id: string,
+    updates: Partial<Omit<PlaylistData, "id" | "createdAt">>
+  ) => boolean;
+  deletePlaylistById: (id: string) => boolean;
+  moveVideoToNewPlaylist: (
+    videoId: string,
+    targetPlaylistId: string
+  ) => boolean;
   isLoading: boolean;
 }
 
@@ -35,22 +61,34 @@ const VideoContext = createContext<VideoContextType | undefined>(undefined);
 
 export function VideoProvider({ children }: { children: ReactNode }) {
   const [videos, setVideos] = useState<Video[]>([]);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [currentVideo, setCurrentVideo] = useState<Video | null>(null);
+  const [currentPlaylist, setCurrentPlaylist] = useState<Playlist | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [fileMap, setFileMap] = useState<Map<string, File>>(new Map());
 
   useEffect(() => {
-    const loadVideos = async () => {
+    const loadData = async () => {
+      // Load playlists
+      const allPlaylists = getAllPlaylists();
+      setPlaylists(allPlaylists);
+
+      // Set default playlist as current
+      const defaultPlaylist =
+        allPlaylists.find((p) => p.id === "default") || allPlaylists[0];
+      setCurrentPlaylist(defaultPlaylist);
+
       // Note: Files are not persisted across sessions since they're stored in memory
       // On app reload, only metadata is loaded from localStorage
       // This is intentional for this local-file-based app design
       setVideos([]); // Start with empty array since files aren't persisted
       setIsLoading(false);
     };
-    loadVideos();
+    loadData();
   }, []);
 
-  const addVideos = (files: File[]) => {
+  const addVideos = (files: File[], playlistId?: string) => {
+    const targetPlaylistId = playlistId || currentPlaylist?.id || "default";
     const newVideos: Video[] = [];
     const newFileMap = new Map(fileMap);
 
@@ -80,14 +118,18 @@ export function VideoProvider({ children }: { children: ReactNode }) {
 
       video.src = URL.createObjectURL(file);
 
-      const videoData = addVideoToDB({
-        name: file.name.replace(/\.[^/.]+$/, ""),
-        duration: 0, // Will be updated once metadata loads
-        progress: 0,
-        currentTime: 0,
-        watched: false,
-        addedAt: new Date().toISOString(),
-      });
+      const videoData = addVideoToDB(
+        {
+          name: file.name.replace(/\.[^/.]+$/, ""),
+          duration: 0, // Will be updated once metadata loads
+          progress: 0,
+          currentTime: 0,
+          watched: false,
+          addedAt: new Date().toISOString(),
+          playlistId: targetPlaylistId,
+        },
+        targetPlaylistId
+      );
 
       newFileMap.set(videoData.id, file);
       newVideos.push({
@@ -133,15 +175,78 @@ export function VideoProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const createNewPlaylist = (
+    name: string,
+    description?: string,
+    color?: string
+  ): Playlist => {
+    const newPlaylist = createPlaylist({ name, description, color });
+    setPlaylists((prev) => [...prev, newPlaylist]);
+    return newPlaylist;
+  };
+
+  const updatePlaylistInfo = (
+    id: string,
+    updates: Partial<Omit<PlaylistData, "id" | "createdAt">>
+  ): boolean => {
+    const updatedPlaylist = updatePlaylist(id, updates);
+    if (updatedPlaylist) {
+      setPlaylists((prev) =>
+        prev.map((p) => (p.id === id ? updatedPlaylist : p))
+      );
+      if (currentPlaylist?.id === id) {
+        setCurrentPlaylist(updatedPlaylist);
+      }
+      return true;
+    }
+    return false;
+  };
+
+  const deletePlaylistById = (id: string): boolean => {
+    const success = deletePlaylist(id);
+    if (success) {
+      setPlaylists((prev) => prev.filter((p) => p.id !== id));
+      if (currentPlaylist?.id === id) {
+        const defaultPlaylist = playlists.find((p) => p.id === "default");
+        setCurrentPlaylist(defaultPlaylist || null);
+      }
+      // Remove videos from this playlist in local state
+      setVideos((prev) => prev.filter((v) => v.playlistId !== id));
+    }
+    return success;
+  };
+
+  const moveVideoToNewPlaylist = (
+    videoId: string,
+    targetPlaylistId: string
+  ): boolean => {
+    const success = moveVideoToPlaylist(videoId, targetPlaylistId);
+    if (success) {
+      setVideos((prev) =>
+        prev.map((v) =>
+          v.id === videoId ? { ...v, playlistId: targetPlaylistId } : v
+        )
+      );
+    }
+    return success;
+  };
+
   return (
     <VideoContext.Provider
       value={{
         videos,
+        playlists,
+        currentPlaylist,
         addVideos,
         removeVideo,
         updateProgress,
         currentVideo,
         setCurrentVideo,
+        setCurrentPlaylist,
+        createNewPlaylist,
+        updatePlaylistInfo,
+        deletePlaylistById,
+        moveVideoToNewPlaylist,
         isLoading,
       }}
     >

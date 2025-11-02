@@ -112,7 +112,7 @@ export function ImportModal({
                 autoFocus
               />
             </div>
-
+            
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
                 Description (Optional)
@@ -125,7 +125,7 @@ export function ImportModal({
                 className="w-full px-3 py-2 bg-background border border-border rounded-lg text-foreground placeholder-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent resize-none"
               />
             </div>
-
+            
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
                 Color Theme
@@ -144,8 +144,7 @@ export function ImportModal({
             </div>
 
             <div className="text-sm text-foreground/60 bg-secondary/50 p-3 rounded-lg">
-              📁 <strong>{pendingFiles.length}</strong> video
-              {pendingFiles.length !== 1 ? "s" : ""} ready to import
+              📁 <strong>{pendingFiles.length}</strong> video{pendingFiles.length !== 1 ? 's' : ''} ready to import
             </div>
 
             <div className="flex gap-3 pt-4">
@@ -187,6 +186,8 @@ export function ImportModal({
                 ))}
                 <option value="create-new">+ Create New Playlist</option>
               </select>
+            </div>
+
             </div>
 
             {/* Drop zone */}
